@@ -10,6 +10,7 @@ import '../app_theme.dart';
 import '../core/save.dart';
 import '../core/widgets.dart';
 import 'clip_factory.dart';
+import 'effects.dart';
 import 'engine.dart';
 import 'exporter.dart';
 import 'ff.dart';
@@ -563,6 +564,56 @@ class _VideoEditorPageState extends State<VideoEditorPage> with SingleTickerProv
         ]);
   }
 
+  void _fxSheet() {
+    final c = _selClip;
+    if (c == null) return;
+    var cat = kEffectCategories.first;
+    _sheet('Effects', (set) => [
+          if (c.effects.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text('Pick an effect below. Effects stack, top to bottom.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textDim)),
+            ),
+          for (final e in List.of(c.effects)) ...[
+            Row(children: [
+              Expanded(child: Text(e.def?.label ?? e.type, style: const TextStyle(fontWeight: FontWeight.w600))),
+              if (e.def?.preview != true)
+                const Padding(
+                  padding: EdgeInsets.only(right: 4),
+                  child: Text('shown on export', style: TextStyle(fontSize: 11, color: AppColors.textDim)),
+                ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.delete_outline, size: 20),
+                onPressed: () => set(() => c.effects.remove(e)),
+              ),
+            ]),
+            for (final p in e.def?.params ?? const <FxParam>[])
+              ParamSlider(
+                label: p.label,
+                value: e.get(p.key).clamp(p.min, p.max),
+                min: p.min,
+                max: p.max,
+                def: p.def,
+                decimals: p.decimals,
+                onChanged: (v) => set(() => e.v[p.key] = v),
+              ),
+            const Divider(height: 18),
+          ],
+          const Text('Add effect', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          _wrapPills<String>(kEffectCategories, (k) => k, (k) => cat == k, (k) => set(() => cat = k)),
+          const SizedBox(height: 6),
+          _wrapPills<FxDef>(
+            kEffects.values.where((d) => d.category == cat),
+            (d) => d.label,
+            (d) => c.effects.any((e) => e.type == d.id),
+            (d) => set(() => c.effects.add(ClipFx.of(d.id))),
+          ),
+        ]);
+  }
+
   void _adjustSheet() {
     final c = _selClip;
     if (c == null) return;
@@ -1082,6 +1133,7 @@ class _VideoEditorPageState extends State<VideoEditorPage> with SingleTickerProv
         (Icons.animation, 'Animation', _animationSheet),
         (Icons.filter_vintage_outlined, 'Filters', _filterSheet),
         (Icons.tune, 'Adjust', _adjustSheet),
+        (Icons.auto_awesome, 'Effects', _fxSheet),
         (Icons.open_with, 'Transform', _transformSheet),
         if (video) (Icons.fast_rewind_outlined, 'Reverse', _reverse),
         if (video && isMain) (Icons.ac_unit, 'Freeze', _freeze),

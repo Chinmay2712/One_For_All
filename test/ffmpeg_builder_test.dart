@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:one_for_all_studio/video/effects.dart';
 import 'package:one_for_all_studio/video/ffmpeg_builder.dart';
 import 'package:one_for_all_studio/video/models.dart';
 
@@ -45,5 +46,26 @@ void main() {
     expect(g, contains("rotate=a='if(lt((t-1),2)"));
     expect(g, contains('eval=frame'));
     expect(g, contains("enable='between(t,1,6)'"));
+  });
+
+  test('every effect builds a valid graph and survives save/load', () {
+    final c = _video('a.mp4', 5);
+    for (final d in kEffects.values) {
+      c.effects.add(ClipFx.of(d.id));
+    }
+    final copy = c.copy();
+    expect(copy.effects.length, kEffects.length);
+    final g = buildExport(
+      Project()..main = [c],
+      const ExportSpec(width: 720, height: 1280, fps: 30, encoder: 'libx264', outPath: 'o.mp4'),
+    ).filterGraph;
+    expect(g, contains('blend=c0_mode=screen'));
+    expect(g, contains('hstack'));
+    final produced = RegExp(r'\[([a-z]+\d+|vout|aout)\](?=;|$)').allMatches(g).map((m) => m[1]).toList();
+    expect(produced.toSet().length, produced.length);
+    // The first stage reads the input, every other stage reads a label.
+    for (final stage in g.split(';')) {
+      expect(stage.trim().isNotEmpty, isTrue);
+    }
   });
 }

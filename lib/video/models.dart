@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import '../core/store.dart';
+import 'effects.dart';
 
 enum ClipKind { video, image }
 
@@ -222,6 +223,9 @@ class Clip extends Layer {
   double blur = 0;
   bool flipH = false;
 
+  /// Resolve-style effects, applied in order (see effects.dart).
+  List<ClipFx> effects = [];
+
   /// Transition into the next main-track clip.
   String transition = 'none';
   double transitionDur = 0.6;
@@ -271,6 +275,7 @@ class Clip extends Layer {
         'adjust': adjust,
         'blur': blur,
         'flipH': flipH,
+        'effects': [for (final e in effects) e.toJson()],
         'transition': transition,
         'transitionDur': transitionDur,
         'start': start,
@@ -300,6 +305,10 @@ class Clip extends Layer {
       ..adjust = (j['adjust'] as Map? ?? {}).map((k, v) => MapEntry(k as String, _d(v)))
       ..blur = _d(j['blur'])
       ..flipH = j['flipH'] == true
+      ..effects = [
+        for (final e in (j['effects'] as List? ?? []))
+          if (e is Map) ?ClipFx.fromJson(e),
+      ]
       ..transition = j['transition'] as String? ?? 'none'
       ..transitionDur = _d(j['transitionDur'], 0.6)
       ..start = _d(j['start']);

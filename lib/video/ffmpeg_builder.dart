@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'effects.dart';
 import 'models.dart';
 
 /// Output settings for an export.
@@ -105,16 +106,8 @@ FfmpegCommand buildExport(Project p, ExportSpec s) {
     return inputCount++;
   }
 
-  /// Filters that turn a clip's raw video into an RGBA layer raster.
-  String clipChain(Clip c, double start, double raster) {
-    final k = math.min(w / c.srcW, h / c.srcH);
-    final parts = <String>[
-      'setpts=(PTS-STARTPTS)${c.isImage || c.speed == 1 ? '' : '/${_n(c.speed)}'}${start == 0 ? '' : '+${_n(start)}/TB'}',
-      'fps=${s.fps}',
-      'scale=${_even(c.srcW * k * raster)}:${_even(c.srcH * k * raster)}',
-      'format=rgba',
-    ];
-    if (c.flipH) parts.add('hflip');
+  List<String> colorChain(Clip c, double raster) {
+    final parts = <String>[];
     final cm = clipColor(c);
     if (!cm.isIdentity || c.opacity < 0.999) {
       final m = cm.m, o = cm.o;
@@ -125,7 +118,7 @@ FfmpegCommand buildExport(Project p, ExportSpec s) {
           'aa=${_n(c.opacity.clamp(0.0, 1.0))}');
     }
     if (c.blur > 0) parts.add('gblur=sigma=${_n(c.blur / 100 * 0.03 * h * raster)}');
-    return parts.join(',');
+    return parts;
   }
 
   /// Animated rotation / scale / fades shared by clips and text.
@@ -145,6 +138,41 @@ FfmpegCommand buildExport(Project p, ExportSpec s) {
       parts.add('scale=w=iw*$sc:h=ih*$sc');
     }
     return parts;
+  }
+
+  /// Adds the full per-clip graph `[input:v] ... [out]`: raster, effects,
+  /// colour, blur, then fades / rotation / scale.
+  void clipLayer(int input, Clip c, double start, double raster, String out) {
+    final k = math.min(w / c.srcW, h / c.srcH);
+    final lw = _even(c.srcW * k * raster), lh = _even(c.srcH * k * raster);
+    final env = FxEnv(lw, lh, h * raster);
+    var chain = <String>[
+      'setpts=(PTS-STARTPTS)${c.isImage || c.speed == 1 ? '' : '/${_n(c.speed)}'}${start == 0 ? '' : '+${_n(start)}/TB'}',
+      'fps=${s.fps}',
+      'scale=$lw:$lh',
+      'format=rgba',
+      if (c.flipH) 'hflip',
+    ];
+    var cur = '[$input:v]';
+    for (final e in c.effects) {
+      final def = e.def;
+      if (def == null) continue;
+      for (final step in def.build({for (final p in def.params) p.key: e.get(p.key)}, env)) {
+        if (step is String) {
+          chain.add(step);
+        } else if (step is FxBranch) {
+          final a = next('f'), b = next('f'), m = next('f'), r = next('f');
+          f.add('$cur${[...chain, ...step.pre, 'split'].join(',')}[$a][$b]');
+          f.add('[$b]${[...step.branch, 'format=rgba'].join(',')}[$m]');
+          f.add('[$a][$m]${step.combine}[$r]');
+          cur = '[$r]';
+          chain = [];
+        }
+      }
+    }
+    final tail = [...colorChain(c, raster), ...poseFilters(c, start, raster)];
+    chain.addAll(tail);
+    f.add('$cur${chain.isEmpty ? 'null' : chain.join(',')}[$out]');
   }
 
   String overlay(String base, String layer, Layer l, double start, String out) {
@@ -178,7 +206,7 @@ FfmpegCommand buildExport(Project p, ExportSpec s) {
     final input = addClipInput(c);
     final raster = rasterScale(c);
     final layer = next('l'), bg = next('b'), placed = next('p'), frame = next('v');
-    f.add('[$input:v]${[clipChain(c, 0, raster), ...poseFilters(c, 0, raster)].join(',')}[$layer]');
+    clipLayer(input, c, 0, raster, layer);
     f.add('color=c=${_hex(p.background)}:s=${s.width}x${s.height}:r=${s.fps}:d=${_n(c.duration)}[$bg]');
     f.add(overlay(bg, layer, c, 0, placed));
     f.add('[$placed]fps=${s.fps},format=yuv420p,setsar=1,settb=AVTB[$frame]');
@@ -207,7 +235,7 @@ FfmpegCommand buildExport(Project p, ExportSpec s) {
     final input = addClipInput(c);
     final raster = rasterScale(c);
     final layer = next('l'), out = next('o');
-    f.add('[$input:v]${[clipChain(c, c.start, raster), ...poseFilters(c, c.start, raster)].join(',')}[$layer]');
+    clipLayer(input, c, c.start, raster, layer);
     f.add(overlay(acc, layer, c, c.start, out));
     clipAudio(c, input, c.start, c.fadeIn, c.fadeOut);
     acc = out;

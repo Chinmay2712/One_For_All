@@ -9,6 +9,7 @@ import 'package:video_player/video_player.dart';
 import '../app_theme.dart';
 import '../core/media.dart';
 import 'engine.dart';
+import 'fx_preview.dart';
 import 'models.dart';
 import 'text_render.dart';
 
@@ -172,12 +173,14 @@ class _VideoPreviewState extends State<VideoPreview> {
     final p = c.poseAt(lt.clamp(0.0, c.duration));
     final b = _box(p, _clipBase(c, cw, ch), cw, ch);
     final ctrl = engine.controllerFor(c.id);
-    Widget w = c.isImage
+    Widget make({bool primary = false}) => c.isImage
         ? mediaImage(c.path)
         : ctrl != null
-            ? VideoPlayer(ctrl, key: ValueKey('vp-${c.id}'))
+            ? VideoPlayer(ctrl, key: primary ? ValueKey('vp-${c.id}') : null)
             : const ColoredBox(color: Colors.black);
-    if (c.flipH) w = Transform.flip(flipX: true, child: w);
+    Widget flip(Widget x) => c.flipH ? Transform.flip(flipX: true, child: x) : x;
+    var w = flip(make(primary: true));
+    w = applyFxPreview(c.effects, w, () => flip(make()), ch);
     final cm = clipColor(c);
     if (!cm.isIdentity) w = ColorFiltered(colorFilter: ColorFilter.matrix(cm.toFlutter()), child: w);
     if (c.blur > 0) {
