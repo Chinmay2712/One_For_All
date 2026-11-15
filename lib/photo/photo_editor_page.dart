@@ -371,7 +371,7 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
     final msg = await withProgress<String?>(context, 'Removing background', (_) async {
       final mask = await AiSegmenter.personMask(widget.doc.path);
       if (mask == null) return null;
-      final full = await Media.load(widget.doc.path, maxEdge: 4096);
+      final full = await Media.load(widget.doc.path);
       final developed = await DevelopRenderer.renderFinal(full, _s.copy()..crop = const Rect.fromLTRB(0, 0, 1, 1)..turns = 0..flipH = false..flipV = false..straighten = 0);
       final png = await AiSegmenter.cutOut(developed, mask);
       return Saver.saveImage(png, 'cutout_${DateTime.now().millisecondsSinceEpoch}.png');

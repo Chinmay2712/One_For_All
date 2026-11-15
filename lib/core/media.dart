@@ -22,10 +22,13 @@ bool isImagePath(String path) {
 class Media {
   static final _picker = ImagePicker();
 
-  static Future<List<XFile>> pickImages() => _picker.pickMultiImage();
+  // iPhone photos are often HEIC. Setting a quality (with no size limit) makes
+  // iOS re-encode them natively as a full-resolution, upright JPEG instead of
+  // Flutter decoding the HEIC itself. Pixel size is never reduced.
+  static Future<List<XFile>> pickImages() => _picker.pickMultiImage(imageQuality: 100);
 
   static Future<XFile?> pickImage() =>
-      _picker.pickImage(source: ImageSource.gallery);
+      _picker.pickImage(source: ImageSource.gallery, imageQuality: 100);
 
   static Future<XFile?> pickVideo() =>
       _picker.pickVideo(source: ImageSource.gallery);

@@ -127,7 +127,7 @@ class PhotoExport {
   /// Full-resolution render of [path] with [settings], encoded per [o].
   static Future<Uint8List> renderFile(String path, DevelopSettings settings, ExportOptions o) async {
     await DevelopRenderer.init();
-    final source = await Media.load(path, maxEdge: 8192);
+    final source = await Media.load(path);
     final out = await DevelopRenderer.renderFinal(source, settings, maxEdge: o.maxEdge);
     final bytes = await encode(out, o);
     out.dispose();
