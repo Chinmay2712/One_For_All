@@ -3,60 +3,91 @@
 
 precision highp float;
 
-// NOTE: uniform order must match DevelopRenderer._setUniforms in
-// lib/photo/develop_renderer.dart.
-uniform vec2 uSize;      // image size in px; the shader is drawn on Rect(0,0,uSize)
-uniform vec2 uVigC;      // vignette centre (image uv)
-uniform vec2 uVigR;      // vignette half extent (image uv)
-uniform float uExposure; // stops
-uniform float uContrast; // -1..1
-uniform float uHighlights;
-uniform float uShadows;
-uniform float uWhites;
-uniform float uBlacks;
-uniform float uTemp;
-uniform float uTint;
-uniform float uVibrance;
-uniform float uSaturation;
-uniform float uTexture;
-uniform float uClarity;
-uniform float uDehaze;
-uniform float uSharpen;  // 0..1
-uniform float uNoise;    // 0..1
-uniform float uVignette; // -1..1
-uniform float uVigMid;   // 0..1
-uniform float uVigFeather;
-uniform float uGrain;    // 0..1
-uniform float uGrainSize;
-uniform float uCurveOn;
-uniform float uHslOn;
-uniform float uBW;
-uniform vec3 uHsl0; // (hue, sat, lum) per colour band, each -1..1
-uniform vec3 uHsl1;
-uniform vec3 uHsl2;
-uniform vec3 uHsl3;
-uniform vec3 uHsl4;
-uniform vec3 uHsl5;
-uniform vec3 uHsl6;
-uniform vec3 uHsl7;
-uniform vec3 uGS; // colour grading shadows (hue 0..1, sat 0..1, lum -1..1)
-uniform vec3 uGM;
-uniform vec3 uGH;
-uniform float uGradeBalance;
-uniform float uGradeBlend;
-uniform vec4 uM0Geo;
-uniform vec4 uM0Cfg; // type, feather, invert, texture channel
-uniform vec4 uM0A;   // exposure, contrast, highlights, shadows
-uniform vec4 uM0B;   // temp, tint, saturation, unused
-uniform vec4 uM1Geo;
-uniform vec4 uM1Cfg;
-uniform vec4 uM1A;
-uniform vec4 uM1B;
-uniform vec4 uM2Geo;
-uniform vec4 uM2Cfg;
-uniform vec4 uM2A;
-uniform vec4 uM2B;
-uniform float uShowMask; // 0 none, 1..3 = overlay that mask in red
+// All settings are packed into vec4s: Metal allows at most 31 separate
+// uniform buffers, and one-uniform-per-setting needed 52.
+// The flat float order is written by DevelopRenderer.paint in
+// lib/photo/develop_renderer.dart; the #defines below give each slot its name.
+uniform vec4 uP0;
+uniform vec4 uP1;
+uniform vec4 uP2;
+uniform vec4 uP3;
+uniform vec4 uP4;
+uniform vec4 uP5;
+uniform vec4 uP6;
+uniform vec4 uP7;
+uniform vec4 uP8;
+uniform vec4 uP9;
+uniform vec4 uP10;
+uniform vec4 uP11;
+uniform vec4 uP12;
+uniform vec4 uP13;
+uniform vec4 uP14;
+uniform vec4 uP15;
+uniform vec4 uP16;
+uniform vec4 uP17;
+uniform vec4 uP18;
+uniform vec4 uP19;
+uniform vec4 uP20;
+uniform vec4 uP21;
+uniform vec4 uP22;
+uniform vec4 uP23;
+uniform vec4 uP24;
+uniform vec4 uP25;
+uniform vec4 uP26;
+uniform vec4 uP27;
+uniform vec4 uP28;
+#define uSize (uP0.xy)
+#define uVigC (uP0.zw)
+#define uVigR (uP1.xy)
+#define uExposure (uP1.z)
+#define uContrast (uP1.w)
+#define uHighlights (uP2.x)
+#define uShadows (uP2.y)
+#define uWhites (uP2.z)
+#define uBlacks (uP2.w)
+#define uTemp (uP3.x)
+#define uTint (uP3.y)
+#define uVibrance (uP3.z)
+#define uSaturation (uP3.w)
+#define uTexture (uP4.x)
+#define uClarity (uP4.y)
+#define uDehaze (uP4.z)
+#define uSharpen (uP4.w)
+#define uNoise (uP5.x)
+#define uVignette (uP5.y)
+#define uVigMid (uP5.z)
+#define uVigFeather (uP5.w)
+#define uGrain (uP6.x)
+#define uGrainSize (uP6.y)
+#define uCurveOn (uP6.z)
+#define uHslOn (uP6.w)
+#define uBW (uP7.x)
+#define uHsl0 (uP7.yzw)
+#define uHsl1 (uP8.xyz)
+#define uHsl2 (vec3(uP8.w, uP9.x, uP9.y))
+#define uHsl3 (vec3(uP9.z, uP9.w, uP10.x))
+#define uHsl4 (uP10.yzw)
+#define uHsl5 (uP11.xyz)
+#define uHsl6 (vec3(uP11.w, uP12.x, uP12.y))
+#define uHsl7 (vec3(uP12.z, uP12.w, uP13.x))
+#define uGS (uP13.yzw)
+#define uGM (uP14.xyz)
+#define uGH (vec3(uP14.w, uP15.x, uP15.y))
+#define uGradeBalance (uP15.z)
+#define uGradeBlend (uP15.w)
+#define uM0Geo (uP16)
+#define uM0Cfg (uP17)
+#define uM0A (uP18)
+#define uM0B (uP19)
+#define uM1Geo (uP20)
+#define uM1Cfg (uP21)
+#define uM1A (uP22)
+#define uM1B (uP23)
+#define uM2Geo (uP24)
+#define uM2Cfg (uP25)
+#define uM2A (uP26)
+#define uM2B (uP27)
+#define uShowMask (uP28.x)
 uniform sampler2D uImage;
 uniform sampler2D uCurve; // 256x1 lookup, rgb = per channel curve
 uniform sampler2D uMask0; // painted / AI masks, greyscale, one per mask slot

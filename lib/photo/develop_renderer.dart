@@ -339,6 +339,10 @@ class DevelopRenderer {
       }
     }
     f(showMask.toDouble());
+    // The shader packs its settings into 29 vec4s (116 floats); zero the rest.
+    for (var z = 0; z < 3; z++) {
+      f(0);
+    }
 
     sh.setImageSampler(0, a.base, filterQuality: FilterQuality.low);
     sh.setImageSampler(1, a.lut, filterQuality: FilterQuality.low);
