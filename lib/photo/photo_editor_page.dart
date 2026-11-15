@@ -513,16 +513,15 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
             icon: const Icon(Icons.redo, size: 20),
             onPressed: ready && _hi < _history.length - 1 ? () => _restore(_hi + 1) : null,
           ),
-          GestureDetector(
-            onTapDown: (_) => setState(() => _compare = true),
-            onTapUp: (_) => setState(() => _compare = false),
-            onTapCancel: () => setState(() => _compare = false),
-            child: Tooltip(
-              message: 'Hold to see the original',
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Icon(Icons.compare, size: 20, color: _compare ? AppColors.accent : AppColors.text),
-              ),
+          // Raw pointer events: no gesture recogniser (or Tooltip long-press)
+          // can cancel the hold, so the original stays up until release.
+          Listener(
+            onPointerDown: (_) => setState(() => _compare = true),
+            onPointerUp: (_) => setState(() => _compare = false),
+            onPointerCancel: (_) => setState(() => _compare = false),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Icon(Icons.compare, size: 22, color: _compare ? AppColors.accent : AppColors.text),
             ),
           ),
           PopupMenuButton<String>(

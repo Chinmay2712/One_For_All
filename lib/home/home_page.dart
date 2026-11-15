@@ -317,7 +317,7 @@ class CreateTab extends StatelessWidget {
           ),
         );
     return ListView(padding: const EdgeInsets.all(16), children: [
-      card(Icons.grid_view, 'Collage', 'Combine 2 to 9 photos in a grid.', const CollagePage()),
+      card(Icons.grid_view, 'Collage', 'Frame one photo or combine up to 9.', const CollagePage()),
       card(Icons.auto_awesome_motion, 'Batch edit', 'Apply one look to many photos and export them together.', const BatchPage()),
     ]);
   }
