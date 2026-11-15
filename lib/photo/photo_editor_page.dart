@@ -100,6 +100,15 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
       });
       _pushHistory();
       _scheduleHist();
+      // A preset is already applied: open its page so that is obvious.
+      final g = _appliedGroup();
+      if (g != null && mounted) {
+        setState(() {
+          _tool = _Tool.presets;
+          _presetGroup = g;
+        });
+        _ensurePresetThumbs();
+      }
     } catch (e) {
       if (mounted) setState(() => _error = 'Could not open this photo.\n$e');
     }
@@ -250,6 +259,23 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
     _s.presetName = null;
     _live();
     _commit();
+  }
+
+  void _clearPreset() {
+    _s.clearLook();
+    _rebuildLut();
+    _live();
+    _commit();
+  }
+
+  /// The preset group that holds the preset currently applied, if any.
+  String? _appliedGroup() {
+    final n = _s.presetName;
+    if (n == null) return null;
+    for (final p in kBuiltInPresets) {
+      if (p.name == n) return p.group;
+    }
+    return UserPresets.all().any((p) => p.name == n) ? 'Yours' : null;
   }
 
   void _applyPreset(Preset p) {
@@ -628,7 +654,10 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
               label: t.$3,
               selected: _tool == t.$1,
               onTap: () {
-                setState(() => _tool = t.$1);
+                setState(() {
+                  _tool = t.$1;
+                  if (t.$1 == _Tool.presets) _presetGroup = _appliedGroup() ?? _presetGroup;
+                });
                 if (t.$1 == _Tool.presets) _ensurePresetThumbs();
               },
             ),
@@ -782,6 +811,7 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
             _presetAction(Icons.add, 'Save current', _savePreset),
             _presetAction(Icons.file_download_outlined, 'Import', _importPreset),
           ],
+          _presetNone(),
           for (final p in list)
             GestureDetector(
               onTap: () => _applyPreset(p),
@@ -823,6 +853,28 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
       ),
     ]);
   }
+
+  Widget _presetNone() => GestureDetector(
+        onTap: _clearPreset,
+        child: Container(
+          width: 84,
+          margin: const EdgeInsets.only(right: 8),
+          child: Column(children: [
+            Container(
+              width: 84,
+              height: 84,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceHi,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _s.presetName == null ? AppColors.accent : Colors.transparent, width: 2),
+              ),
+              child: const Icon(Icons.block, color: AppColors.textDim),
+            ),
+            const SizedBox(height: 5),
+            const Text('None', style: TextStyle(fontSize: 11)),
+          ]),
+        ),
+      );
 
   Widget _presetAction(IconData icon, String label, VoidCallback onTap) => GestureDetector(
         onTap: onTap,

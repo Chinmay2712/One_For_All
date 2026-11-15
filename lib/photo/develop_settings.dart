@@ -300,6 +300,14 @@ class DevelopSettings {
     presetName = other.presetName;
   }
 
+  /// Removes the look entirely: tone, colour, effects, curves and any preset.
+  void clearLook() {
+    v.clear();
+    bw = false;
+    curves = {for (final c in kCurveChannels) c: [[0.0, 0.0], [1.0, 1.0]]};
+    presetName = null;
+  }
+
   /// Resets tone/colour to defaults then applies a preset's overrides.
   void applyPreset(String name, Map<String, double> values,
       {bool mono = false, Map<String, List<List<double>>>? presetCurves}) {

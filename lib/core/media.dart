@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -20,21 +22,46 @@ bool isImagePath(String path) {
 
 /// Picking, persisting and decoding media.
 class Media {
-  static final _picker = ImagePicker();
 
-  // iPhone photos are often HEIC. Setting a quality (with no size limit) makes
-  // iOS re-encode them natively as a full-resolution, upright JPEG instead of
-  // Flutter decoding the HEIC itself. Pixel size is never reduced.
-  static Future<List<XFile>> pickImages() => _picker.pickMultiImage(imageQuality: 100);
+  // image_picker hands back copies called "image_picker_123.jpg". file_picker
+  // keeps the name the file has on the device, so the app can show it.
+  // (Its "compression quality" mode must stay off: it renames and re-encodes.)
+  // On iOS, "compatible" turns HEIC into a JPEG at full resolution.
+  static const _ios = DarwinOptions(assetRepresentationMode: DarwinAssetRepresentationMode.compatible);
 
-  static Future<XFile?> pickImage() =>
-      _picker.pickImage(source: ImageSource.gallery, imageQuality: 100);
+  static const _imageExt = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'bmp', 'gif'];
+  static const _videoExt = ['mp4', 'mov', 'm4v', 'mkv', 'webm', '3gp', 'avi'];
 
-  static Future<XFile?> pickVideo() =>
-      _picker.pickVideo(source: ImageSource.gallery);
+  /// Android's own photo picker hides real names ("1000000033.jpg"), so on
+  /// Android the file chooser is used, filtered to the right kinds of file.
+  /// iPhone keeps the photo-library picker.
+  static Future<List<XFile>> _pick(FileType type, {bool multiple = true}) async {
+    final android = !kIsWeb && Platform.isAndroid;
+    final kind = android ? FileType.custom : type;
+    final ext = !android
+        ? null
+        : switch (type) {
+            FileType.image => _imageExt,
+            FileType.video => _videoExt,
+            _ => [..._imageExt, ..._videoExt],
+          };
+    final files = multiple
+        ? await FilePicker.pickFiles(type: kind, allowedExtensions: ext, darwinOptions: _ios)
+        : [await FilePicker.pickFile(type: kind, allowedExtensions: ext, darwinOptions: _ios)].whereType<PlatformFile>().toList();
+    return [
+      for (final f in files)
+        if (f.xFile.path.isNotEmpty) XFile(f.xFile.path, name: f.name),
+    ];
+  }
+
+  static Future<List<XFile>> pickImages() => _pick(FileType.image);
+
+  static Future<XFile?> pickImage() async => (await _pick(FileType.image, multiple: false)).firstOrNull;
+
+  static Future<XFile?> pickVideo() async => (await _pick(FileType.video, multiple: false)).firstOrNull;
 
   /// Photos and videos together (for the video timeline).
-  static Future<List<XFile>> pickMixed() => _picker.pickMultipleMedia();
+  static Future<List<XFile>> pickMixed() => _pick(FileType.media);
 
   static Future<Directory> _dir(String name) async {
     final base = await getApplicationDocumentsDirectory();
@@ -71,8 +98,87 @@ class Media {
     return File(path).readAsBytes();
   }
 
+  // A tiny JPEG whose EXIF says "rotate 90°". Decoding it shows whether this
+  // device's decoder already applies EXIF orientation (it must not be applied
+  // twice, and some decoders skip it).
+  static const _exifProbe = '/9j/4AAQSkZJRgABAQAAAQABAAD/4QAiRXhpZgAATU0AKgAAAAgAAQESAAMAAAABAAYAAAAAAAD/2wCEAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSgBBwcHCggKEwoKEygaFhooKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKP/AABEIAAQACAMBEQACEQEDEQH/xAGiAAABBQEBAQEBAQAAAAAAAAAAAQIDBAUGBwgJCgsQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+gEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoLEQACAQIEBAMEBwUEBAABAncAAQIDEQQFITEGEkFRB2FxEyIygQgUQpGhscEJIzNS8BVictEKFiQ04SXxFxgZGiYnKCkqNTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqCg4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2dri4+Tl5ufo6ery8/T19vf4+fr/2gAMAwEAAhEDEQA/AIq+PPvj/9k=';
+  static bool? _decoderHonorsExif;
+
+  static Future<bool> _honorsExif() async {
+    if (_decoderHonorsExif != null) return _decoderHonorsExif!;
+    try {
+      final codec = await ui.instantiateImageCodec(base64.decode(_exifProbe));
+      final img = (await codec.getNextFrame()).image;
+      codec.dispose();
+      _decoderHonorsExif = img.height > img.width;
+      img.dispose();
+    } catch (_) {
+      _decoderHonorsExif = true;
+    }
+    return _decoderHonorsExif!;
+  }
+
+  /// EXIF orientation (1-8) of a JPEG, or 1 when absent.
+  static int exifOrientation(Uint8List b) {
+    if (b.length < 12 || b[0] != 0xFF || b[1] != 0xD8) return 1;
+    var i = 2;
+    while (i + 4 < b.length && b[i] == 0xFF) {
+      final marker = b[i + 1];
+      if (marker == 0xDA || marker == 0xD9) break;
+      final len = (b[i + 2] << 8) | b[i + 3];
+      if (marker == 0xE1 && i + 10 < b.length && b[i + 4] == 0x45 && b[i + 5] == 0x78 && b[i + 6] == 0x69 && b[i + 7] == 0x66) {
+        final t = i + 10; // TIFF header
+        final le = b[t] == 0x49;
+        int u16(int o) => le ? b[t + o] | (b[t + o + 1] << 8) : (b[t + o] << 8) | b[t + o + 1];
+        int u32(int o) => le
+            ? b[t + o] | (b[t + o + 1] << 8) | (b[t + o + 2] << 16) | (b[t + o + 3] << 24)
+            : (b[t + o] << 24) | (b[t + o + 1] << 16) | (b[t + o + 2] << 8) | b[t + o + 3];
+        if (t + 8 >= b.length) return 1;
+        final ifd = u32(4);
+        if (t + ifd + 2 >= b.length) return 1;
+        final n = u16(ifd);
+        for (var k = 0; k < n; k++) {
+          final e = ifd + 2 + k * 12;
+          if (t + e + 12 > b.length) break;
+          if (u16(e) == 0x0112) {
+            final v = u16(e + 8);
+            return v >= 1 && v <= 8 ? v : 1;
+          }
+        }
+        return 1;
+      }
+      i += 2 + len;
+    }
+    return 1;
+  }
+
+  /// Redraws [src] upright for EXIF [o] (2-8).
+  static Future<ui.Image> _orient(ui.Image src, int o) async {
+    final w = src.width.toDouble(), h = src.height.toDouble();
+    final swap = o >= 5;
+    final m = switch (o) {
+      1 => Matrix4.identity(),
+      2 => Matrix4(-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, w, 0, 0, 1),
+      3 => Matrix4(-1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, w, h, 0, 1),
+      4 => Matrix4(1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, h, 0, 1),
+      5 => Matrix4(0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1),
+      6 => Matrix4(0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, h, 0, 0, 1),
+      7 => Matrix4(0, -1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, h, w, 0, 1),
+      _ => Matrix4(0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, w, 0, 1),
+    };
+    final rec = ui.PictureRecorder();
+    final c = Canvas(rec)..transform(m.storage);
+    c.drawImage(src, Offset.zero, Paint()..filterQuality = FilterQuality.none);
+    final out = await rec.endRecording().toImage(swap ? src.height : src.width, swap ? src.width : src.height);
+    src.dispose();
+    return out;
+  }
+
   /// Decodes [bytes], scaling down so the long edge is at most [maxEdge].
+  /// Photos always come out upright, whatever the device's decoder does.
   static Future<ui.Image> decode(Uint8List bytes, {int? maxEdge}) async {
+    final orient = exifOrientation(bytes);
+    final fix = orient > 1 && !await _honorsExif();
     final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
     final codec = await ui.instantiateImageCodecWithSize(
       buffer,
@@ -90,7 +196,9 @@ class Media {
     );
     final frame = await codec.getNextFrame();
     codec.dispose();
-    return frame.image;
+    // Always redraw: the picture then has the same texture layout as the
+    // procedurally drawn sample on every graphics backend.
+    return _orient(frame.image, fix ? orient : 1);
   }
 
   static Future<ui.Image> load(String path, {int? maxEdge}) async {
