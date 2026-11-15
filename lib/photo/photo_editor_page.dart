@@ -85,13 +85,42 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
     super.dispose();
   }
 
+  String _step = 'Starting';
+  final _clock = Stopwatch()..start();
+
+  /// Runs one loading step, showing its name on screen and turning a hang
+  /// into a visible error instead of an endless spinner.
+  Future<T> _stage<T>(String name, Future<T> Function() run) async {
+    if (mounted) setState(() => _step = name);
+    try {
+      return await run().timeout(const Duration(seconds: 30));
+    } on TimeoutException {
+      throw 'Stuck for 30s at: $name';
+    } finally {
+      debugPrint('OFA load: $name done at ${_clock.elapsedMilliseconds}ms');
+    }
+  }
+
   Future<void> _load() async {
     try {
-      await DevelopRenderer.init();
+      await _stage('Preparing the editing engine', DevelopRenderer.init);
       _shader = DevelopRenderer.newShader();
-      final image = await Media.load(widget.doc.path, maxEdge: 2048);
-      _subjects = await DevelopRenderer.decodeSubjects(_s.masks);
-      final assets = await DevelopRenderer.prepare(image, _s);
+      final image = await _stage('Opening the photo', () => Media.load(widget.doc.path, maxEdge: 2048));
+      _subjects = await _stage('Reading masks', () => DevelopRenderer.decodeSubjects(_s.masks));
+      final assets = await _stage('Setting up the image (${image.width}x${image.height})', () => DevelopRenderer.prepare(image, _s));
+      // Probe: a tiny render must contain visible pixels, otherwise the GPU
+      // shader is producing nothing on this device and we say so.
+      await _stage('Testing the GPU renderer', () async {
+        final probe = await DevelopRenderer.render(assets, _s, maxEdge: 16);
+        final px = (await probe.toByteData(format: ui.ImageByteFormat.rawRgba))!.buffer.asUint8List();
+        probe.dispose();
+        var seen = 0;
+        for (var i = 0; i + 3 < px.length; i += 4) {
+          seen += px[i + 3] > 0 ? 1 : 0;
+        }
+        debugPrint('OFA probe visible pixels: $seen of ${px.length ~/ 4}');
+        if (seen == 0) throw 'The GPU shader drew nothing (blank output) on this device';
+      });
       if (!mounted) return;
       setState(() {
         _image = image;
@@ -100,8 +129,8 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
       });
       _pushHistory();
       _scheduleHist();
-    } catch (e) {
-      if (mounted) setState(() => _error = 'Could not open this photo.\n$e');
+    } catch (e, st) {
+      if (mounted) setState(() => _error = 'Could not open this photo.\nAt: $_step\n$e\n\n${st.toString().split('\n').take(6).join('\n')}');
     }
   }
 
@@ -525,7 +554,13 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
         ],
       ),
       body: !ready
-          ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
+          ? Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const CircularProgressIndicator(color: AppColors.accent),
+                const SizedBox(height: 16),
+                Text(_step, style: const TextStyle(color: AppColors.textDim)),
+              ]),
+            )
           : SafeArea(
               top: false,
               child: Column(children: [
