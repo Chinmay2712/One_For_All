@@ -29,38 +29,6 @@ jobs:
       - name: Build iOS app (unsigned)
         run: flutter build ios --release --no-codesign
 
-      # Diagnostic: pull the Metal shader out of the built app and compile it
-      # the way the iPhone does, so any compile error shows up as an annotation.
-      - name: Check the photo shader compiles for Metal
-        continue-on-error: true
-        run: |
-          python3 - <<'EOF' > shader_check.txt 2>&1 || true
-          import glob, subprocess, sys
-          files = glob.glob('build/ios/iphoneos/Runner.app/**/shaders/develop.frag', recursive=True)
-          print('iplr files:', files)
-          data = open(files[0], 'rb').read()
-          i = data.find(b'#include <metal_stdlib>')
-          if i < 0:
-              i = data.find(b'using namespace metal')
-          print('metal source at', i, 'of', len(data))
-          if i >= 0:
-              j = data.find(b'\x00', i)
-              src = data[i:j]
-              open('develop.metal', 'wb').write(src)
-              print('source bytes', len(src))
-              r = subprocess.run(['xcrun', '-sdk', 'iphoneos', 'metal', '-c', 'develop.metal', '-o', 'develop.air'],
-                                 capture_output=True, text=True)
-              print('metal exit code', r.returncode)
-              print((r.stdout + r.stderr)[:2500])
-              print('--- uniform struct ---')
-              k = src.find(b'struct FragInfo')
-              print(src[k:k + 1800].decode(errors='replace') if k >= 0 else 'no FragInfo struct')
-          EOF
-          find build/ios -name 'develop*' 2>/dev/null | head -5 >> shader_check.txt
-          cat shader_check.txt
-          msg=$(head -c 3500 shader_check.txt | python3 -c "import sys,urllib.parse;print(sys.stdin.read().replace('%','%25').replace('\r','%0D').replace('\n','%0A'))")
-          echo "::error title=Metal shader check::$msg"
-
       - name: Package .ipa
         run: |
           mkdir -p Payload
