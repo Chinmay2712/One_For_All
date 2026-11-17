@@ -84,11 +84,11 @@ class _CurveEditorState extends State<CurveEditor> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(children: [
-      Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+    return Column(children: [
+      Row(children: [
         for (final c in kCurveChannels)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
+            padding: const EdgeInsets.only(right: 6),
             child: Pill(
               label: c.toUpperCase(),
               selected: _ch == c,
@@ -98,6 +98,7 @@ class _CurveEditorState extends State<CurveEditor> {
               }),
             ),
           ),
+        const Spacer(),
         TextButton(
           onPressed: () {
             widget.settings.curves[_ch] = [[0, 0], [1, 1]];
@@ -105,10 +106,10 @@ class _CurveEditorState extends State<CurveEditor> {
             widget.onChanged();
             widget.onCommit();
           },
-          child: const Text('Reset', style: TextStyle(fontSize: 12)),
+          child: Text('Reset ${_ch.toUpperCase()}', style: const TextStyle(fontSize: 12)),
         ),
       ]),
-      const SizedBox(width: 8),
+      const SizedBox(height: 6),
       Expanded(
         child: Center(
           child: AspectRatio(

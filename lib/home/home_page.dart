@@ -1,6 +1,6 @@
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app_theme.dart';
 import '../core/media.dart';
@@ -28,12 +28,35 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return DecoratedBox(
+      // A faint safelight glow behind the header; the rest stays quiet.
+      decoration: const BoxDecoration(
+        color: AppColors.bg,
+        gradient: RadialGradient(
+          center: Alignment(-0.9, -1.05),
+          radius: 1.1,
+          colors: [Color(0x1FFFB02E), Color(0x0A4FD8E0), Color(0x0008090C)],
+          stops: [0, 0.45, 1],
+        ),
+      ),
+      child: Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
-        title: const Row(children: [
-          Icon(Icons.blur_circular, color: AppColors.accent),
-          SizedBox(width: 8),
-          Text('One For All Studio'),
+        backgroundColor: Colors.transparent,
+        toolbarHeight: 64,
+        titleSpacing: 20,
+        title: Row(children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.accent),
+            child: const Icon(Icons.blur_circular, size: 20, color: AppColors.onAccent),
+          ),
+          const SizedBox(width: 10),
+          Text.rich(TextSpan(children: [
+            TextSpan(text: 'One For All ', style: display(21)),
+            TextSpan(text: 'Studio', style: display(21, weight: FontWeight.w400, color: AppColors.textDim)),
+          ])),
         ]),
       ),
       body: IndexedStack(index: _tab, children: const [
@@ -41,16 +64,31 @@ class _HomePageState extends State<HomePage> {
         VideosTab(),
         CreateTab(),
       ]),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        backgroundColor: AppColors.surface,
-        indicatorColor: AppColors.accent.withValues(alpha: 0.25),
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.photo_outlined), selectedIcon: Icon(Icons.photo), label: 'Photos'),
-          NavigationDestination(icon: Icon(Icons.movie_outlined), selectedIcon: Icon(Icons.movie), label: 'Videos'),
-          NavigationDestination(icon: Icon(Icons.dashboard_customize_outlined), selectedIcon: Icon(Icons.dashboard_customize), label: 'Create'),
-        ],
+      // Floating dock: big targets in thumb reach, lit along its top edge.
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: Container(
+          decoration: litPanel(glow: true),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(children: [
+            NavigationBar(
+              backgroundColor: Colors.transparent,
+              height: 70,
+              selectedIndex: _tab,
+              onDestinationSelected: (i) {
+                HapticFeedback.selectionClick();
+                setState(() => _tab = i);
+              },
+              destinations: const [
+                NavigationDestination(icon: Icon(Icons.photo_outlined), selectedIcon: Icon(Icons.photo), label: 'Photos'),
+                NavigationDestination(icon: Icon(Icons.movie_outlined), selectedIcon: Icon(Icons.movie), label: 'Videos'),
+                NavigationDestination(icon: Icon(Icons.dashboard_customize_outlined), selectedIcon: Icon(Icons.dashboard_customize), label: 'Create'),
+              ],
+            ),
+            const Positioned(left: 0, right: 0, top: 0, child: LightEdge(inset: 30)),
+          ]),
+        ),
+      ),
       ),
     );
   }
@@ -73,6 +111,14 @@ class _PhotosTabState extends State<PhotosTab> {
   }
 
   void _reload() => setState(() => _docs = PhotoLibrary.all());
+
+  /// The most recently touched photo that has edits: unfinished work is what
+  /// people come back for.
+  PhotoDoc? get _resume {
+    final edited = _docs.where((d) => !d.settings.isDefault).toList()
+      ..sort((a, b) => b.updated.compareTo(a.updated));
+    return edited.isEmpty ? null : edited.first;
+  }
 
   Future<void> _open(PhotoDoc doc) async {
     await Navigator.push(context, MaterialPageRoute(builder: (_) => PhotoEditorPage(doc: doc)));
@@ -106,15 +152,11 @@ class _PhotosTabState extends State<PhotosTab> {
     return CustomScrollView(slivers: [
       SliverToBoxAdapter(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
           child: Row(children: [
             Expanded(
               child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.accent,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
+                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
                 onPressed: _import,
                 icon: const Icon(Icons.add_photo_alternate_outlined),
                 label: const Text('Import photos'),
@@ -122,28 +164,56 @@ class _PhotosTabState extends State<PhotosTab> {
             ),
             const SizedBox(width: 10),
             OutlinedButton(
-              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14)),
+              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18)),
               onPressed: _sample,
               child: const Text('Try a sample'),
             ),
           ]),
         ),
       ),
+      if (_resume case final doc?)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+            child: _ResumeCard(doc: doc, onTap: () => _open(doc)),
+          ),
+        ),
+      if (_docs.isNotEmpty)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+            child: Text('Library', style: display(18, weight: FontWeight.w600)),
+          ),
+        ),
       if (_docs.isEmpty)
-        const SliverFillRemaining(
+        SliverFillRemaining(
           hasScrollBody: false,
           child: Center(
-            child: Text('Your edited photos will appear here.', style: TextStyle(color: AppColors.textDim)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.photo_library_outlined, size: 42, color: AppColors.line),
+                const SizedBox(height: 14),
+                Text('No photos yet', style: display(18, weight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                const Text(
+                  'Import a photo to start editing. Everything you edit is saved here.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textDim, height: 1.4),
+                ),
+              ]),
+            ),
           ),
         )
       else
         SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           sliver: SliverGrid(
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: 190,
-              mainAxisSpacing: 6,
-              crossAxisSpacing: 6,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 0.86,
             ),
             delegate: SliverChildBuilderDelegate(
               childCount: _docs.length,
@@ -164,6 +234,67 @@ class _PhotosTabState extends State<PhotosTab> {
   }
 }
 
+class _ResumeCard extends StatelessWidget {
+  final PhotoDoc doc;
+  final VoidCallback onTap;
+  const _ResumeCard({required this.doc, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Continue editing ${doc.name}',
+      excludeSemantics: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          child: Ink(
+            decoration: litPanel(radius: AppRadius.card),
+            child: Stack(children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      width: 64,
+                      height: 64,
+                      child: FutureBuilder<Uint8List?>(
+                        key: ValueKey('resume-${doc.id}-${doc.updated}'),
+                        future: PhotoLibrary.loadThumb(doc),
+                        builder: (_, snap) => snap.data == null
+                            ? Container(color: AppColors.surfaceHi)
+                            : Image.memory(snap.data!, fit: BoxFit.cover, gaplessPlayback: true),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Continue editing', style: display(16, weight: FontWeight.w600)),
+                      const SizedBox(height: 3),
+                      Text(doc.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, color: AppColors.textDim)),
+                    ]),
+                  ),
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.accent),
+                    child: const Icon(Icons.arrow_forward_rounded, color: AppColors.onAccent),
+                  ),
+                ]),
+              ),
+              const Positioned(left: 0, right: 0, top: 0, child: LightEdge()),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class PhotoTile extends StatelessWidget {
   final PhotoDoc doc;
   final VoidCallback onTap;
@@ -180,7 +311,7 @@ class PhotoTile extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: AppColors.surfaceHi,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(AppRadius.control),
           border: Border.all(color: selected ? AppColors.accent : Colors.transparent, width: 2.5),
         ),
         child: Stack(fit: StackFit.expand, children: [
@@ -191,12 +322,27 @@ class PhotoTile extends StatelessWidget {
                 ? const Icon(Icons.image_outlined, color: AppColors.line)
                 : Image.memory(snap.data!, fit: BoxFit.cover, gaplessPlayback: true),
           ),
-          if (!doc.settings.isDefault)
-            const Positioned(
-              right: 5,
-              bottom: 5,
-              child: Icon(Icons.tune, size: 14, color: Colors.white),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(10, 22, 8, 8),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x00000000), Color(0xCC000000)],
+                ),
+              ),
+              child: Row(children: [
+                Expanded(
+                  child: Text(doc.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w500)),
+                ),
+                if (!doc.settings.isDefault) const Icon(Icons.tune, size: 14, color: AppColors.accent),
+              ]),
             ),
+          ),
           if (selected)
             const Positioned(top: 5, right: 5, child: Icon(Icons.check_circle, color: AppColors.accent, size: 20)),
         ]),
@@ -234,67 +380,79 @@ class _VideosTabState extends State<VideosTab> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 16), children: [
+    return ListView(padding: const EdgeInsets.fromLTRB(20, 4, 20, 20), children: [
       FilledButton.icon(
-        style: FilledButton.styleFrom(
-          backgroundColor: AppColors.accent,
-          foregroundColor: Colors.black,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-        ),
+        style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
         onPressed: () => _open(Project()),
         icon: const Icon(Icons.add),
         label: const Text('New video project'),
       ),
-      const SizedBox(height: 18),
-      const Text('Templates', style: TextStyle(fontWeight: FontWeight.w600)),
-      const SizedBox(height: 8),
+      const SizedBox(height: 26),
+      Text('Templates', style: display(18, weight: FontWeight.w600)),
+      const SizedBox(height: 12),
       SizedBox(
-        height: 118,
-        child: ListView(scrollDirection: Axis.horizontal, children: [
+        height: 132,
+        child: ListView(scrollDirection: Axis.horizontal, clipBehavior: Clip.none, children: [
           for (final t in kVideoTemplates)
             GestureDetector(
               onTap: () => _useTemplate(t),
               child: Container(
-                width: 150,
+                width: 156,
                 margin: const EdgeInsets.only(right: 10),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: t.color.withValues(alpha: 0.22), borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Color.alphaBlend(t.color.withValues(alpha: 0.16), AppColors.surface),
+                  borderRadius: BorderRadius.circular(AppRadius.card),
+                  border: Border.all(color: t.color.withValues(alpha: 0.35)),
+                ),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Icon(t.icon, color: t.color),
-                  const SizedBox(height: 8),
-                  Text(t.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                  Icon(t.icon, color: t.color, size: 22),
+                  const SizedBox(height: 10),
+                  Text(t.name, style: display(14, weight: FontWeight.w600)),
                   const SizedBox(height: 2),
                   Expanded(
-                    child: Text(t.blurb, overflow: TextOverflow.fade, style: const TextStyle(fontSize: 11, color: AppColors.textDim)),
+                    child: Text(t.blurb, overflow: TextOverflow.fade, style: const TextStyle(fontSize: 11.5, color: AppColors.textDim, height: 1.3)),
                   ),
                 ]),
               ),
             ),
         ]),
       ),
-      const SizedBox(height: 18),
-      const Text('Projects', style: TextStyle(fontWeight: FontWeight.w600)),
+      const SizedBox(height: 26),
+      Text('Projects', style: display(18, weight: FontWeight.w600)),
+      const SizedBox(height: 8),
       if (_projects.isEmpty)
         const Padding(
-          padding: EdgeInsets.symmetric(vertical: 24),
-          child: Text('Your video projects will appear here.', style: TextStyle(color: AppColors.textDim)),
+          padding: EdgeInsets.symmetric(vertical: 20),
+          child: Text('No projects yet. Start a new one or pick a template above.', style: TextStyle(color: AppColors.textDim, height: 1.4)),
         ),
       for (final p in _projects)
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.movie_outlined, color: AppColors.accent),
-          title: Text(p.name),
-          subtitle: Text('${formatTime(p.duration)}  ·  ${p.aspectW}:${p.aspectH}  ·  ${p.main.length} ${p.main.length == 1 ? 'clip' : 'clips'}',
-              style: const TextStyle(fontSize: 12, color: AppColors.textDim)),
-          onTap: () => _open(p),
-          trailing: IconButton(
-            icon: const Icon(Icons.delete_outline, size: 20),
-            onPressed: () async {
-              if (await confirm(context, 'Delete "${p.name}"?', 'Delete')) {
-                await ProjectStore.delete(p.id);
-                if (mounted) setState(() => _projects = ProjectStore.all());
-              }
-            },
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
+            color: AppColors.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadius.card),
+              side: const BorderSide(color: AppColors.line),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: ListTile(
+              contentPadding: const EdgeInsets.only(left: 16, right: 6),
+              leading: const Icon(Icons.movie_outlined, color: AppColors.accent),
+              title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: Text('${formatTime(p.duration)}  ·  ${p.aspectW}:${p.aspectH}  ·  ${p.main.length} ${p.main.length == 1 ? 'clip' : 'clips'}',
+                  style: const TextStyle(fontSize: 12, color: AppColors.textDim)),
+              onTap: () => _open(p),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete_outline, size: 20),
+                onPressed: () async {
+                  if (await confirm(context, 'Delete "${p.name}"?', 'Delete')) {
+                    await ProjectStore.delete(p.id);
+                    if (mounted) setState(() => _projects = ProjectStore.all());
+                  }
+                },
+              ),
+            ),
           ),
         ),
     ]);
@@ -306,19 +464,43 @@ class CreateTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget card(IconData icon, String title, String sub, Widget page) => Card(
-          color: AppColors.surface,
-          child: ListTile(
-            leading: Icon(icon, color: AppColors.accent),
-            title: Text(title),
-            subtitle: Text(sub, style: const TextStyle(fontSize: 12, color: AppColors.textDim)),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
+    Widget card(IconData icon, String title, String sub, Widget page, Color tint) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Material(
+            color: Color.alphaBlend(tint.withValues(alpha: 0.10), AppColors.surface),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadius.card),
+              side: BorderSide(color: tint.withValues(alpha: 0.30)),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Row(children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(color: tint.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(16)),
+                    child: Icon(icon, color: tint, size: 26),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(title, style: display(19, weight: FontWeight.w600)),
+                      const SizedBox(height: 3),
+                      Text(sub, style: const TextStyle(fontSize: 12.5, color: AppColors.textDim, height: 1.35)),
+                    ]),
+                  ),
+                  const Icon(Icons.chevron_right, color: AppColors.textDim),
+                ]),
+              ),
+            ),
           ),
         );
-    return ListView(padding: const EdgeInsets.all(16), children: [
-      card(Icons.grid_view, 'Collage', 'Frame one photo or combine up to 9.', const CollagePage()),
-      card(Icons.auto_awesome_motion, 'Batch edit', 'Apply one look to many photos and export them together.', const BatchPage()),
+    return ListView(padding: const EdgeInsets.fromLTRB(20, 8, 20, 20), children: [
+      card(Icons.grid_view_rounded, 'Collage', 'Frame one photo or combine up to 9.', const CollagePage(), AppColors.accent),
+      card(Icons.auto_awesome_motion, 'Batch edit', 'Apply one look to many photos and export them together.', const BatchPage(), AppColors.accent2),
     ]);
   }
 }

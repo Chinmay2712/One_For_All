@@ -70,7 +70,13 @@ class _BatchPageState extends State<BatchPage> {
           p.value = done / targets.length;
         }
       });
-      if (mounted) toast(context, 'Exported $done photos');
+      if (mounted) {
+        await showDoneSheet(
+          context,
+          title: 'Exported $done ${done == 1 ? 'photo' : 'photos'}',
+          detail: 'Saved at full resolution to the One For All Studio album.',
+        );
+      }
     } catch (e) {
       if (mounted) toast(context, 'Stopped after $done photos: $e');
     }
@@ -150,7 +156,6 @@ class _BatchPageState extends State<BatchPage> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: FilledButton(
-                    style: FilledButton.styleFrom(backgroundColor: AppColors.accent, foregroundColor: Colors.black),
                     onPressed: _picked.isNotEmpty ? _export : null,
                     child: const Text('Export selected'),
                   ),

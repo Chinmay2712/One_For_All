@@ -274,6 +274,7 @@ class _CollagePageState extends State<CollagePage> {
 
   Future<void> _export() async {
     if (_images.isEmpty) return;
+    final name = 'OFA_collage_${DateTime.now().millisecondsSinceEpoch}.jpg';
     final msg = await withProgress(context, 'Exporting', (_) async {
       const long = 2400.0;
       final size = _aspect >= 1 ? Size(long, long / _aspect) : Size(long * _aspect, long);
@@ -284,9 +285,15 @@ class _CollagePageState extends State<CollagePage> {
           _bg, _xfs);
       final img = await rec.endRecording().toImage(size.width.round(), size.height.round());
       final bytes = await PhotoExport.encode(img, const ExportOptions(jpeg: true, quality: 94));
-      return Saver.saveImage(bytes, 'OFA_collage_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      return Saver.saveImage(bytes, name);
     });
-    if (mounted && msg != null) toast(context, msg);
+    if (!mounted || msg == null) return;
+    await showDoneSheet(
+      context,
+      title: msg,
+      detail: 'Your collage is in the One For All Studio album.',
+      onShare: Saver.hasGallery ? () async => Saver.shareFile(await Saver.tempPath(name)) : null,
+    );
   }
 
   @override
@@ -299,11 +306,7 @@ class _CollagePageState extends State<CollagePage> {
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 10),
-            child: FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: AppColors.accent, foregroundColor: Colors.black),
-              onPressed: _images.isEmpty ? null : _export,
-              child: const Text('Export'),
-            ),
+            child: GlowButton(label: 'Export', onPressed: _images.isEmpty ? null : _export),
           ),
         ],
       ),
@@ -314,7 +317,6 @@ class _CollagePageState extends State<CollagePage> {
                 ? Center(
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
                       FilledButton.icon(
-                        style: FilledButton.styleFrom(backgroundColor: AppColors.accent, foregroundColor: Colors.black),
                         onPressed: _pick,
                         icon: const Icon(Icons.add_photo_alternate_outlined),
                         label: const Text('Choose 1 to 9 photos'),

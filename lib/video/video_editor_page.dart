@@ -584,7 +584,6 @@ class _VideoEditorPageState extends State<VideoEditorPage> with SingleTickerProv
                   child: Text('shown on export', style: TextStyle(fontSize: 11, color: AppColors.textDim)),
                 ),
               IconButton(
-                visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.delete_outline, size: 20),
                 onPressed: () => set(() => c.effects.remove(e)),
               ),
@@ -825,7 +824,6 @@ class _VideoEditorPageState extends State<VideoEditorPage> with SingleTickerProv
             Pill(label: 'Shadow', selected: t.shadow, onTap: () => set(() => t.shadow = !t.shadow)),
             for (final a in const [(0, Icons.format_align_left), (1, Icons.format_align_center), (2, Icons.format_align_right)])
               IconButton(
-                visualDensity: VisualDensity.compact,
                 icon: Icon(a.$2, size: 18, color: t.align == a.$1 ? AppColors.accent : AppColors.text),
                 onPressed: () => set(() => t.align = a.$1),
               ),
@@ -915,7 +913,7 @@ class _VideoEditorPageState extends State<VideoEditorPage> with SingleTickerProv
           child: Padding(
             padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Export video', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              Text('Export video', style: display(18, weight: FontWeight.w600)),
               const SizedBox(height: 12),
               const Text('Resolution', style: TextStyle(fontSize: 12, color: AppColors.textDim)),
               const SizedBox(height: 6),
@@ -941,9 +939,8 @@ class _VideoEditorPageState extends State<VideoEditorPage> with SingleTickerProv
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  style: FilledButton.styleFrom(backgroundColor: AppColors.accent, foregroundColor: Colors.black),
                   onPressed: () => Navigator.pop(ctx, true),
-                  child: Text('Export  ·  ${formatTime(pr.duration)}'),
+                  child: Text('Export ${formatTime(pr.duration)} of video'),
                 ),
               ),
             ]),
@@ -986,13 +983,12 @@ class _VideoEditorPageState extends State<VideoEditorPage> with SingleTickerProv
       msg = 'Exported, but could not save to the gallery: $e';
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      duration: const Duration(seconds: 6),
-      // Snack bars with an action stay up by default; this one covers the toolbar.
-      persist: false,
-      action: SnackBarAction(label: 'Share', onPressed: () => Saver.shareFile(path)),
-    ));
+    await showDoneSheet(
+      context,
+      title: msg,
+      detail: '${res >= 2160 ? '4K' : '${res}p'}, $fps fps, ${formatTime(pr.duration)} long.',
+      onShare: () => Saver.shareFile(path),
+    );
   }
 
   // ------------------------------------------------------------ build
@@ -1019,16 +1015,7 @@ class _VideoEditorPageState extends State<VideoEditorPage> with SingleTickerProv
           ),
           Padding(
             padding: const EdgeInsets.only(right: 10, left: 4),
-            child: FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.accent,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                minimumSize: const Size(0, 34),
-              ),
-              onPressed: _export,
-              child: const Text('Export'),
-            ),
+            child: GlowButton(label: 'Export', onPressed: _export),
           ),
         ],
       ),
@@ -1095,19 +1082,16 @@ class _VideoEditorPageState extends State<VideoEditorPage> with SingleTickerProv
             const Spacer(),
             IconButton(
               tooltip: 'Keyframe at playhead',
-              visualDensity: VisualDensity.compact,
               icon: Icon(onKey ? Icons.diamond : Icons.diamond_outlined, size: 19, color: layer == null ? AppColors.line : (onKey ? AppColors.accent : AppColors.text)),
               onPressed: layer == null ? null : _toggleKeyframe,
             ),
             IconButton(
               tooltip: 'Zoom out',
-              visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.zoom_out, size: 19),
               onPressed: () => setState(() => pps = math.max(8, pps / 1.5)),
             ),
             IconButton(
               tooltip: 'Zoom in',
-              visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.zoom_in, size: 19),
               onPressed: () => setState(() => pps = math.min(480, pps * 1.5)),
             ),
@@ -1126,14 +1110,15 @@ class _VideoEditorPageState extends State<VideoEditorPage> with SingleTickerProv
     if (clip != null) {
       final isMain = pr.main.contains(clip);
       final video = !clip.isImage;
+      // Most-used first (split, look, timing), rarer edits after.
       tools = [
         (Icons.content_cut, 'Split', _split),
+        (Icons.tune, 'Adjust', _adjustSheet),
+        (Icons.filter_vintage_outlined, 'Filters', _filterSheet),
+        (Icons.auto_awesome, 'Effects', _fxSheet),
         if (video) (Icons.speed, 'Speed', _speedSheet),
         if (video) (Icons.volume_up_outlined, 'Volume', _volumeSheet),
         (Icons.animation, 'Animation', _animationSheet),
-        (Icons.filter_vintage_outlined, 'Filters', _filterSheet),
-        (Icons.tune, 'Adjust', _adjustSheet),
-        (Icons.auto_awesome, 'Effects', _fxSheet),
         (Icons.open_with, 'Transform', _transformSheet),
         if (video) (Icons.fast_rewind_outlined, 'Reverse', _reverse),
         if (video && isMain) (Icons.ac_unit, 'Freeze', _freeze),
@@ -1171,27 +1156,31 @@ class _VideoEditorPageState extends State<VideoEditorPage> with SingleTickerProv
         (Icons.aspect_ratio, 'Canvas', _canvasSheet),
       ];
     }
-    return Container(
-      decoration: const BoxDecoration(color: AppColors.bg, border: Border(top: BorderSide(color: AppColors.line))),
+    return ToolDock(
       child: Row(children: [
-        if (sel != null)
+        if (sel != null) ...[
           IconButton(
             tooltip: 'Back to main tools',
             icon: const Icon(Icons.keyboard_arrow_left),
             onPressed: () => setState(() => sel = null),
           ),
+          const ToolGroupDivider(),
+        ],
         Expanded(
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Row(children: [
-              for (final t in tools)
+              for (final t in tools) ...[
+                // Delete stands apart, at the end, so it is never hit by accident.
+                if (t.$2 == 'Delete') const ToolGroupDivider(),
                 ToolButton(
                   icon: t.$1,
                   label: t.$2,
                   onTap: t.$3,
                   color: t.$2 == 'Delete' ? AppColors.danger : null,
                 ),
+              ],
             ]),
           ),
         ),

@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app_theme.dart';
 import '../core/media.dart';
@@ -454,11 +454,18 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
     final o = await showExportSheet(context);
     if (o == null || !mounted) return;
     try {
+      final name = 'OFA_${DateTime.now().millisecondsSinceEpoch}.${o.ext}';
       final msg = await withProgress(context, 'Exporting', (_) async {
         final bytes = await PhotoExport.renderFile(widget.doc.path, _s, o);
-        return Saver.saveImage(bytes, 'OFA_${DateTime.now().millisecondsSinceEpoch}.${o.ext}');
+        return Saver.saveImage(bytes, name);
       });
-      if (mounted && msg != null) toast(context, msg);
+      if (!mounted || msg == null) return;
+      await showDoneSheet(
+        context,
+        title: msg,
+        detail: 'Full resolution, in the One For All Studio album.',
+        onShare: Saver.hasGallery ? () async => Saver.shareFile(await Saver.tempPath(name)) : null,
+      );
     } catch (e) {
       if (mounted) toast(context, 'Export failed: $e');
     }
@@ -515,18 +522,26 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
           ),
           // Raw pointer events: no gesture recogniser (or Tooltip long-press)
           // can cancel the hold, so the original stays up until release.
-          Listener(
-            onPointerDown: (_) => setState(() => _compare = true),
-            onPointerUp: (_) => setState(() => _compare = false),
-            onPointerCancel: (_) => setState(() => _compare = false),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Icon(Icons.compare, size: 22, color: _compare ? AppColors.accent : AppColors.text),
+          Semantics(
+            button: true,
+            label: 'Hold to see the original',
+            child: Listener(
+              onPointerDown: (_) {
+                HapticFeedback.selectionClick();
+                setState(() => _compare = true);
+              },
+              onPointerUp: (_) => setState(() => _compare = false),
+              onPointerCancel: (_) => setState(() => _compare = false),
+              child: SizedBox(
+                width: 48,
+                height: 48,
+                child: Icon(Icons.compare, size: 22, color: _compare ? AppColors.accent : AppColors.text),
+              ),
             ),
           ),
           PopupMenuButton<String>(
+            tooltip: 'More',
             onSelected: _menu,
-            color: AppColors.surfaceHi,
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'copy', child: Text('Copy settings')),
               PopupMenuItem(value: 'paste', child: Text('Paste settings')),
@@ -536,16 +551,7 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
           ),
           Padding(
             padding: const EdgeInsets.only(right: 10),
-            child: FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.accent,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                minimumSize: const Size(0, 34),
-              ),
-              onPressed: ready ? _export : null,
-              child: const Text('Export'),
-            ),
+            child: GlowButton(label: 'Export', onPressed: ready ? _export : null),
           ),
         ],
       ),
@@ -556,13 +562,18 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
               child: Column(children: [
                 Expanded(child: _canvasArea()),
                 Container(
-                  color: AppColors.surface,
-                  constraints: const BoxConstraints(maxHeight: 236),
+                  color: AppColors.bg,
+                  constraints: const BoxConstraints(maxHeight: 268),
                   width: double.infinity,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(14, 8, 14, 6),
-                    child: _panel(),
-                  ),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    _panelHeader(),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                        child: _panel(),
+                      ),
+                    ),
+                  ]),
                 ),
                 _toolBar(),
               ]),
@@ -600,66 +611,188 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
       Positioned(
         top: 8,
         right: 8,
-        child: GestureDetector(
-          onTap: () {
-            setState(() => _showHist = !_showHist);
-            _scheduleHist();
-          },
-          child: _showHist
-              ? HistogramView(data: _hist)
-              : Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(color: const Color(0x99000000), borderRadius: BorderRadius.circular(6)),
-                  child: const Icon(Icons.bar_chart, size: 18, color: AppColors.textDim),
-                ),
+        child: Semantics(
+          button: true,
+          label: _showHist ? 'Hide histogram' : 'Show histogram',
+          child: GestureDetector(
+            onTap: () {
+              setState(() => _showHist = !_showHist);
+              _scheduleHist();
+            },
+            child: _showHist
+                ? HistogramView(data: _hist)
+                : Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xB308090C),
+                      borderRadius: BorderRadius.circular(AppRadius.control),
+                      border: Border.all(color: AppColors.line),
+                    ),
+                    child: const Icon(Icons.bar_chart, size: 20, color: AppColors.text),
+                  ),
+          ),
         ),
       ),
       if (_compare)
-        const Positioned(
-          top: 10,
-          left: 10,
+        Positioned(
+          top: 12,
+          left: 12,
           child: DecoratedBox(
-            decoration: BoxDecoration(color: Color(0xB0000000), borderRadius: BorderRadius.all(Radius.circular(4))),
-            child: Padding(padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4), child: Text('Original', style: TextStyle(fontSize: 12))),
+            decoration: BoxDecoration(
+              color: const Color(0xCC08090C),
+              borderRadius: BorderRadius.circular(AppRadius.chip),
+              border: Border.all(color: AppColors.accent.withValues(alpha: 0.6)),
+            ),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Text('Original', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.accent)),
+            ),
           ),
         ),
     ]);
   }
 
+  List<ParamSpec>? _toolSpecs(_Tool t) => switch (t) {
+        _Tool.light => P.light,
+        _Tool.color => P.color,
+        _Tool.mix => P.hsl,
+        _Tool.grading => P.grading,
+        _Tool.effects => P.effects,
+        _Tool.detail => P.detail,
+        _ => null,
+      };
+
+  static const _toolInfo = {
+    _Tool.presets: ('Presets', 'Tap a look to apply it'),
+    _Tool.crop: ('Crop', 'Drag the corners or pick a ratio'),
+    _Tool.light: ('Light', 'Tap a handle to reset it'),
+    _Tool.color: ('Colour', 'Tap a handle to reset it'),
+    _Tool.mix: ('Mix', 'Pick a colour, then shift it'),
+    _Tool.grading: ('Grading', 'Tint shadows, midtones and highlights'),
+    _Tool.curve: ('Curve', 'Drag points to shape the tones'),
+    _Tool.effects: ('Effects', 'Tap a handle to reset it'),
+    _Tool.detail: ('Detail', 'Tap a handle to reset it'),
+    _Tool.masks: ('Masking', 'Add a mask, then adjust inside it'),
+    _Tool.heal: ('Heal', 'Tap a spot to remove it'),
+    _Tool.ai: ('AI', 'One-tap fixes, done on your phone'),
+  };
+
+  /// Names the open tool, gives one line of guidance, and offers to reset
+  /// just this tool's edits.
+  Widget _panelHeader() {
+    final info = _toolInfo[_tool]!;
+    final canReset = _edited(_tool) && (_toolSpecs(_tool) != null || _tool == _Tool.curve);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 6, 0),
+      child: SizedBox(
+        height: 40,
+        child: Row(children: [
+          Text(info.$1, style: display(15, weight: FontWeight.w600)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(info.$2, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: AppColors.textDim)),
+          ),
+          if (canReset)
+            TextButton(
+              onPressed: _resetTool,
+              child: Text('Reset ${info.$1.toLowerCase()}'),
+            ),
+          if (_tool == _Tool.light)
+            TextButton.icon(
+              onPressed: _auto,
+              icon: const Icon(Icons.auto_fix_high, size: 16),
+              label: const Text('Auto'),
+            ),
+        ]),
+      ),
+    );
+  }
+
+  void _resetTool() {
+    HapticFeedback.lightImpact();
+    setState(() {
+      for (final p in _toolSpecs(_tool) ?? const <ParamSpec>[]) {
+        _s[p.id] = p.def;
+      }
+      if (_tool == _Tool.color) _s.bw = false;
+      if (_tool == _Tool.curve) {
+        _s.curves = {
+          for (final c in kCurveChannels) c: [[0.0, 0.0], [1.0, 1.0]],
+        };
+      }
+      _s.presetName = null;
+    });
+    if (_tool == _Tool.curve) _rebuildLut();
+    _live();
+    _commit();
+  }
+
+  bool _anyChanged(Iterable<ParamSpec> specs) => specs.any((p) => (_s[p.id] - p.def).abs() > 1e-6);
+
+  /// Whether a tool's panel holds edits, so the bar can show where work is.
+  bool _edited(_Tool t) => switch (t) {
+        _Tool.presets => _s.presetName != null,
+        _Tool.crop => _s.hasCrop || _s.turns != 0 || _s.flipH || _s.flipV || _s.straighten != 0,
+        _Tool.light => _anyChanged(P.light),
+        _Tool.color => _s.bw || _anyChanged(P.color),
+        _Tool.mix => _s.hasHsl,
+        _Tool.grading => _anyChanged(P.grading),
+        _Tool.curve => _s.hasCurve,
+        _Tool.effects => _anyChanged(P.effects),
+        _Tool.detail => _anyChanged(P.detail),
+        _Tool.masks => _s.masks.isNotEmpty,
+        _Tool.heal => _s.spots.isNotEmpty,
+        _Tool.ai => false,
+      };
+
   Widget _toolBar() {
-    const tools = [
-      (_Tool.presets, Icons.auto_awesome_motion, 'Presets'),
-      (_Tool.crop, Icons.crop_rotate, 'Crop'),
-      (_Tool.light, Icons.wb_sunny_outlined, 'Light'),
-      (_Tool.color, Icons.thermostat, 'Colour'),
-      (_Tool.mix, Icons.palette_outlined, 'Mix'),
-      (_Tool.grading, Icons.gradient, 'Grading'),
-      (_Tool.curve, Icons.show_chart, 'Curve'),
-      (_Tool.effects, Icons.blur_on, 'Effects'),
-      (_Tool.detail, Icons.details, 'Detail'),
-      (_Tool.masks, Icons.filter_tilt_shift, 'Masking'),
-      (_Tool.heal, Icons.healing, 'Heal'),
-      (_Tool.ai, Icons.auto_fix_high, 'AI'),
+    // One flat row, as in Lightroom, chunked into four groups: looks and
+    // framing, global adjustments, local fixes, and AI.
+    const groups = [
+      [
+        (_Tool.presets, Icons.auto_awesome_motion, 'Presets'),
+        (_Tool.crop, Icons.crop_rotate, 'Crop'),
+      ],
+      [
+        (_Tool.light, Icons.wb_sunny_outlined, 'Light'),
+        (_Tool.color, Icons.thermostat, 'Colour'),
+        (_Tool.mix, Icons.palette_outlined, 'Mix'),
+        (_Tool.grading, Icons.gradient, 'Grading'),
+        (_Tool.curve, Icons.show_chart, 'Curve'),
+        (_Tool.effects, Icons.blur_on, 'Effects'),
+        (_Tool.detail, Icons.details, 'Detail'),
+      ],
+      [
+        (_Tool.masks, Icons.filter_tilt_shift, 'Masking'),
+        (_Tool.heal, Icons.healing, 'Heal'),
+      ],
+      [
+        (_Tool.ai, Icons.auto_fix_high, 'AI'),
+      ],
     ];
-    return Container(
-      decoration: const BoxDecoration(color: AppColors.bg, border: Border(top: BorderSide(color: AppColors.line))),
+    return ToolDock(
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Row(children: [
-          for (final t in tools)
-            ToolButton(
-              icon: t.$2,
-              label: t.$3,
-              selected: _tool == t.$1,
-              onTap: () {
-                setState(() {
-                  _tool = t.$1;
-                  if (t.$1 == _Tool.presets) _presetGroup = _appliedGroup() ?? _presetGroup;
-                });
-                if (t.$1 == _Tool.presets) _ensurePresetThumbs();
-              },
-            ),
+          for (var g = 0; g < groups.length; g++) ...[
+            if (g > 0) const ToolGroupDivider(),
+            for (final t in groups[g])
+              ToolButton(
+                icon: t.$2,
+                label: t.$3,
+                selected: _tool == t.$1,
+                edited: _edited(t.$1),
+                onTap: () {
+                  setState(() {
+                    _tool = t.$1;
+                    if (t.$1 == _Tool.presets) _presetGroup = _appliedGroup() ?? _presetGroup;
+                  });
+                  if (t.$1 == _Tool.presets) _ensurePresetThumbs();
+                },
+              ),
+          ],
         ]),
       ),
     );
@@ -683,17 +816,7 @@ class _PhotoEditorPageState extends State<PhotoEditorPage> {
   Widget _panel() {
     switch (_tool) {
       case _Tool.light:
-        return Column(children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: _auto,
-              icon: const Icon(Icons.auto_fix_high, size: 16),
-              label: const Text('Auto'),
-            ),
-          ),
-          _sliders(P.light),
-        ]);
+        return _sliders(P.light);
       case _Tool.color:
         return Column(children: [
           Row(children: [
@@ -1189,7 +1312,6 @@ Future<ExportOptions?> showExportSheet(BuildContext context, {String action = 'E
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: AppColors.accent, foregroundColor: Colors.black),
                 onPressed: () => Navigator.pop(ctx, ExportOptions(jpeg: jpeg, quality: quality.round(), maxEdge: maxEdge)),
                 child: Text(action),
               ),
